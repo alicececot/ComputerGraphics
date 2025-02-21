@@ -1,0 +1,122 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class inputManager : MonoBehaviour {
+
+    [HideInInspector] public float vertical;
+    [HideInInspector] public float horizontal;
+    [HideInInspector] public bool handbrake;
+    [HideInInspector] public bool boosting;
+
+    // AI components
+
+    private trackWaypoints waypoints;
+    private Transform currentWaypoint;
+    private List<Transform> nodes = new List<Transform> ();
+    private int distanceOffset = 3;
+    private float sterrForce = 4f;
+    [Header("AI acceleration value")]
+    [Range(0,1)]public float acceleration = 0.5f;
+    public int currentNode;
+
+
+    private void Start() {
+        waypoints = GameObject.FindGameObjectWithTag("path").GetComponent<trackWaypoints>();
+        currentWaypoint = gameObject.transform;
+        nodes = waypoints.nodes;
+       
+    
+        if (waypoints != null && waypoints.nodes.Count > 0)
+        {
+            nodes = new List<Transform>(waypoints.nodes);
+            Debug.Log($"Nodi caricati: {nodes.Count}");
+        }
+        else
+        {
+            Debug.LogError("Nessun nodo caricato!");
+        }
+    }
+
+    private void FixedUpdate () {
+
+        if (gameObject.tag == "AI") AIDrive();
+        else if (gameObject.tag == "Player"){
+            calculateDistanceOfWaypoints();
+            keyboard ();
+        } 
+
+    }
+
+    private void keyboard () {
+        vertical = Input.GetAxis ("Vertical");
+        horizontal = Input.GetAxis ("Horizontal");
+        handbrake = (Input.GetAxis ("Jump") != 0) ? true : false;
+        if (Input.GetKey (KeyCode.LeftShift)) boosting = true;
+        else boosting = false;
+
+    }
+
+    private void AIDrive () {
+        calculateDistanceOfWaypoints();
+        AISteer ();
+        vertical = acceleration;
+
+    }
+
+    private void calculateDistanceOfWaypoints () {
+        Vector3 position = gameObject.transform.position;
+        float distance = Mathf.Infinity;
+
+        for (int i = 0; i < nodes.Count; i++) {
+            Vector3 difference = nodes[i].transform.position - position;
+            float currentDistance = difference.magnitude;
+            if (currentDistance < distance) {
+                if ((i + distanceOffset) >= nodes.Count) {
+                    currentWaypoint = nodes[1];
+                    distance = currentDistance;
+                } else {
+                    currentWaypoint = nodes[i + distanceOffset];
+                    distance = currentDistance;
+                }
+                currentNode = i;
+            }
+            
+        }
+        
+    }
+
+
+
+
+    private void AISteer()
+    {
+        if (currentWaypoint == null)
+        {
+            Debug.LogWarning("Nessun waypoint corrente!");
+            return;
+        }
+
+        Vector3 relative = transform.InverseTransformPoint(currentWaypoint.position);
+        float distanceToWaypoint = relative.magnitude;
+
+        Vector3 directionToWaypoint = (currentWaypoint.position - transform.position).normalized;
+        float angle = Vector3.SignedAngle(transform.forward, directionToWaypoint, Vector3.up);
+
+        float deadZoneAngle = 3f;  // Se l'angolo è minore di 3°, ignoriamo la sterzata
+        if (Mathf.Abs(angle) < deadZoneAngle)
+        {
+            horizontal = Mathf.Lerp(horizontal, 0f, Time.deltaTime * 2f);
+            return;
+        }
+
+        float steerFactor = (Mathf.Abs(angle) > 30f) ? sterrForce : sterrForce * 0.5f; 
+
+        float targetSteer = Mathf.Clamp(angle / 45f * steerFactor, -1f, 1f);
+        horizontal = Mathf.Lerp(horizontal, -targetSteer, Time.deltaTime * 4f);
+
+        Debug.Log($"Waypoint: {currentWaypoint.name} | Angolo: {angle:F2}° | Distance: {distanceToWaypoint:F2} | Horizontal: {horizontal:F2}");
+    }
+
+
+}
