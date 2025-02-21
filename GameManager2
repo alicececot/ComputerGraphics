@@ -1,0 +1,234 @@
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic; 
+using UnityEngine.UI;
+
+public class GameManager2 : MonoBehaviour
+{
+    public CarController RR;
+    public vehicleList list;
+    public GameObject startPosition1;
+    public Text currentPosition;
+    public GameObject needle;
+    public Text kph;
+    public Text gearNum;
+    public Slider nitrusSlider;
+    private float startPosition = 220f , endPosition= -41f;
+    private float desiredPosition;
+    private GameObject[] presentGameObjectVehicles, fullArray;
+    
+    
+
+    [Header ("racers list")]
+    public GameObject uiList;
+    public GameObject uiListFolder;
+    public GameObject backImage;
+    private List<vehicle> presentVehicles;
+    private List<GameObject> temporaryList;
+    private GameObject[] temporaryArray;
+
+    private int startPositionXvalue = -50-62;
+    private bool arrarDisplayed = false, countdownFlag = false;
+
+
+    [Header("countdown Timer")]
+    public float timeLeft = 3;
+    public Text timeLeftText;
+
+
+    private void Awake () 
+    {
+        presentVehicles = new List<vehicle>();  
+        temporaryList = new List<GameObject>();
+
+        // Trova il Player
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+        {
+            RR = player.GetComponent<CarController>();
+            inputManager playerIM = player.GetComponent<inputManager>();
+            
+
+            if (RR != null && playerIM != null)
+            {
+                presentVehicles.Add(new vehicle(playerIM.currentNode, RR.carName, RR.hasFinished));
+                temporaryList.Add(player); 
+                
+            }
+            else
+            {
+                Debug.LogError("Il Player manca di CarController o inputManager!");
+            }
+        }
+        else
+        {
+            Debug.LogError("Nessun oggetto con tag 'Player' trovato!");
+        }
+
+        // Trova gli oggetti AI
+        presentGameObjectVehicles = GameObject.FindGameObjectsWithTag("AI");
+
+        if (presentGameObjectVehicles.Length == 0)
+        {
+            Debug.LogError("Nessun oggetto AI trovato nella scena!");
+        }
+        else
+        {
+            Debug.Log($"Trovati {presentGameObjectVehicles.Length} oggetti AI.");
+
+            foreach (GameObject aiKart in presentGameObjectVehicles)
+            {
+                if (!aiKart.activeInHierarchy)
+                {
+                    Debug.LogWarning($"Oggetto AI disattivato: {aiKart.name}");
+                    continue;  // Salta gli oggetti disattivati
+                }
+
+                inputManager im = aiKart.GetComponent<inputManager>();
+                CarController ai = aiKart.GetComponent<CarController>();
+
+                if (im != null && ai != null)
+                {
+                    presentVehicles.Add(new vehicle(im.currentNode, ai.carName, ai.hasFinished));
+                    temporaryList.Add(aiKart);
+                    Debug.Log($"AI registrato: {ai.carName} - Nodo: {im.currentNode}");
+                }
+                else
+                {
+                    Debug.LogError($"Manca inputManager o myAIcontroller su: {aiKart.name}");
+                }
+            }
+            
+        }
+
+        // Prepara l'array completo
+        fullArray = temporaryList.ToArray();
+        temporaryArray = new GameObject[presentVehicles.Count];
+
+
+        // Avvia l'array e il ciclo di aggiornamento
+        displayArray();
+        StartCoroutine(timedLoop());
+    }
+
+
+
+    void FixedUpdate(){
+       
+       kph.text=RR.KPH.ToString("0");
+       updateNeedle();
+       nitrusUI();
+       coundDownTimer();
+
+    }
+
+
+
+    public void updateNeedle(){
+          desiredPosition = startPosition - endPosition;
+
+          float temp = RR.engineRPM/10000;
+
+          needle.transform.eulerAngles = new Vector3(0, 0, (startPosition - temp * desiredPosition));
+    }
+
+    public void changeGear(){
+
+        gearNum.text = (!RR.reverse) ? (RR.gearNum + 1).ToString () : "R";
+
+    }
+
+    public void nitrusUI () {
+        nitrusSlider.value = RR.nitrusValue / 45;
+    }
+
+
+    private void sortArray() {
+        for (int i = 0; i < fullArray.Length; i++) {
+            presentVehicles[i].hasFinished = fullArray[i].GetComponent<CarController>().hasFinished;
+            presentVehicles[i].name = fullArray[i].GetComponent<CarController>().carName;
+            presentVehicles[i].node = fullArray[i].GetComponent<inputManager>().currentNode;
+        }
+
+        // Ordina i kart in base al numero del waypoint in ordine crescente
+        presentVehicles.Sort((a, b) => b.node.CompareTo(a.node));
+
+        if (arrarDisplayed) {
+            for (int i = 0; i < temporaryArray.Length; i++) {
+                int reverseIndex = presentVehicles.Count - 1 - i;  // Inverti l'ordine visivo
+
+                temporaryArray[i].transform.Find("vehicle node").gameObject.GetComponent<Text>().text = 
+                    (presentVehicles[reverseIndex].hasFinished) ? "finished" : "";
+                temporaryArray[i].transform.Find("vehicle name").gameObject.GetComponent<Text>().text = 
+                    presentVehicles[reverseIndex].name.ToString();
+            }
+        }
+
+        // Aggiorna la posizione del player nella classifica
+        for (int i = 0; i < presentVehicles.Count; i++) {
+            if (RR.carName == presentVehicles[i].name) {
+                currentPosition.text = ((i + 1) + "/" + presentVehicles.Count).ToString();
+            }
+        }
+    }
+
+    private void displayArray () {
+        if(arrarDisplayed)return;
+        uiList.SetActive(true);
+        for (int i = 0; i < presentVehicles.Count; i++) {
+            generateList (i, presentVehicles[i].hasFinished, presentVehicles[i].name);
+        }
+
+        startPositionXvalue = -50;
+        arrarDisplayed = true;
+        backImage.SetActive(true);
+    }
+
+    private void generateList (int index, bool num, string nameValue) {
+
+        temporaryArray[index] = Instantiate (uiList);
+        temporaryArray[index].transform.parent = uiListFolder.transform;
+        temporaryArray[index].gameObject.GetComponent<RectTransform> ().anchoredPosition = new Vector2 (0, startPositionXvalue);
+        temporaryArray[index].transform.Find ("vehicle name").gameObject.GetComponent<Text> ().text = nameValue.ToString ();
+        temporaryArray[index].transform.Find ("vehicle node").gameObject.GetComponent<Text> ().text =(num)?"finished":"";
+        startPositionXvalue += 50;
+
+    }
+
+    private IEnumerator timedLoop () {
+        while (true) {
+            yield return new WaitForSeconds (.7f);
+            sortArray ();
+        }
+    }
+
+        private void coundDownTimer(){
+        if(timeLeft <= -5) return;
+        timeLeft -= Time.deltaTime;
+        if(timeLeft <= 0)unfreezePlayers();
+        else freezePlayers();
+
+        if(timeLeft > 1 )timeLeftText.text = timeLeft.ToString("0");
+        else if(timeLeft >= -1 && timeLeft <= 1 )timeLeftText.text = "GO!";
+        else timeLeftText.text ="";
+
+    }
+    
+    private void freezePlayers(){
+        if(countdownFlag) return;
+            foreach(GameObject D in fullArray){
+                D.GetComponent<Rigidbody>().isKinematic = true;
+            }
+            countdownFlag = true;
+        
+    }
+
+    private void unfreezePlayers(){
+        if(!countdownFlag) return;
+            foreach(GameObject D in fullArray){
+                D.GetComponent<Rigidbody>().isKinematic = false;
+            }
+            countdownFlag = false;
+        
+    }
+}
